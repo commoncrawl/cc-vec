@@ -198,10 +198,11 @@ def index(
 
     loader = VectorStoreLoader(openai_client, vector_store_config)
 
-    # Get crawl from filter_config or use default
-    crawl_id = (
-        filter_config.crawl_ids[0] if filter_config.crawl_ids else "CC-MAIN-2024-33"
+    # Get crawl IDs from filter_config for display purposes
+    crawl_ids_display = (
+        filter_config.crawl_ids if filter_config.crawl_ids else ["CC-MAIN-2024-33"]
     )
+    logger.info(f"Target crawl IDs: {', '.join(crawl_ids_display)}")
 
     logger.info("Fetching and processing content from Common Crawl...")
     fetch_results = fetch(filter_config, athena_client, s3_client, limit)
@@ -235,7 +236,7 @@ def index(
     return {
         "vector_store_id": vector_store_id,
         "vector_store_name": vector_store_config.name,
-        "crawl": crawl_id,
+        "crawl_ids": crawl_ids_display,
         "total_fetched": len(fetch_results),
         "successful_fetches": len(successful_fetches),
         "total_chunks": upload_result.get("total_chunks", total_chunks),

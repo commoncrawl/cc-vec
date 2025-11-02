@@ -62,8 +62,12 @@ class CCIndexHandler(FilterHandler):
 
             response_text = f"Successfully loaded content into vector store '{result['vector_store_name']}':\n\n"
             response_text += f"Vector Store ID: {result['vector_store_id']}\n"
-            if result.get("crawl"):
-                response_text += f"Crawl: {result['crawl']}\n"
+
+            # Display crawl IDs
+            if result.get("crawl_ids"):
+                crawl_ids = result["crawl_ids"]
+                crawl_display = ", ".join(crawl_ids) if len(crawl_ids) > 1 else crawl_ids[0]
+                response_text += f"Crawl(s): {crawl_display}\n"
             response_text += "\n"
 
             response_text += f"Records processed: {result['total_fetched']}\n"

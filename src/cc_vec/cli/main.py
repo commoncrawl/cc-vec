@@ -668,7 +668,16 @@ def index(ctx, vector_store_name, limit, chunk_size, overlap, output, **filter_k
                 f"Indexed content into vector store '{result['vector_store_name']}':"
             )
             click.echo(f"Vector Store ID: {result['vector_store_id']}")
-            click.echo(f"Crawl: {result['crawl']}")
+
+            # Display crawl IDs
+            crawl_ids = result.get('crawl_ids', [])
+            if crawl_ids:
+                crawl_display = (
+                    ", ".join(crawl_ids)
+                    if len(crawl_ids) > 1
+                    else crawl_ids[0]
+                )
+                click.echo(f"Crawl(s): {crawl_display}")
             click.echo()
 
             click.echo(f"Records processed: {result['total_fetched']}")
