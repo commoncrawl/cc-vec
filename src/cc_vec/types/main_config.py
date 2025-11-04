@@ -34,6 +34,8 @@ class CCVecConfig:
                 embedding_dimensions=int(os.getenv("OPENAI_EMBEDDING_DIMENSIONS"))
                 if os.getenv("OPENAI_EMBEDDING_DIMENSIONS")
                 else None,
+                verify_ssl=os.getenv("OPENAI_VERIFY_SSL", "true").lower()
+                not in ["false", "0", "no"],
             ),
             logging=LoggingSettings(
                 level=os.getenv("LOG_LEVEL", "INFO"),
@@ -62,6 +64,11 @@ class CCVecConfig:
             logger.info("OpenAI client configured")
             if self.openai.base_url:
                 logger.info(f"Using custom OpenAI base URL: {self.openai.base_url}")
+            if not self.openai.verify_ssl:
+                logger.warning(
+                    "⚠️  SSL certificate verification is DISABLED. "
+                    "This should only be used in development with trusted endpoints."
+                )
         else:
             logger.warning(
                 "OpenAI API key not configured - vector operations unavailable"

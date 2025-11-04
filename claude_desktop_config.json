@@ -14,6 +14,9 @@
       "env": {
         "ATHENA_OUTPUT_BUCKET": "s3://llama-stack-dev-test0/athena-results/",
         "OPENAI_API_KEY": "your-openai-api-key-here"
+        // "OPENAI_BASE_URL": "http://localhost:11434/v1"  // Optional: Use for Ollama, Llama Stack, or other OpenAI-compatible endpoints
+        // "OPENAI_VERIFY_SSL": "false"                    // Optional: Disable SSL verification for self-signed certs (dev only)
+        // "OPENAI_EMBEDDING_MODEL": "nomic-embed-text"    // Optional: Specify custom embedding model
       }
     }
   }

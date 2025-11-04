@@ -15,6 +15,7 @@ Search, analyze, and index Common Crawl data into vector stores for RAG applicat
 - **`AWS_SESSION_TOKEN`** - Optional for Athena/S3 access (needed to run Athena queries). This is required for temporary credentials
 - **`OPENAI_API_KEY`** - Required for vector operations (index, query, list)
 - `OPENAI_BASE_URL` - Optional custom OpenAI endpoint (e.g., `http://localhost:8321/v1` for Llama Stack)
+- `OPENAI_VERIFY_SSL` - Verify SSL certificates (default: `true`). Set to `false` for self-signed certs or local development. ⚠️ Use only with trusted endpoints.
 - `OPENAI_EMBEDDING_MODEL` - Embedding model to use (e.g., `text-embedding-3-small`, `nomic-embed-text`)
 - `OPENAI_EMBEDDING_DIMENSIONS` - Embedding dimensions (optional, model-specific)
 - `AWS_DEFAULT_REGION` - AWS region (defaults to us-west-2)
@@ -66,6 +67,22 @@ uv run cc-vec index --url-patterns "%.github.io" --vector-store-name "ml-researc
 # Vector store name is optional - will auto-generate if not provided
 uv run cc-vec index --url-patterns "%.github.io" --limit 50
 
+# Using with alternative OpenAI-compatible endpoints (Ollama example)
+export OPENAI_BASE_URL=http://localhost:11434/v1
+export OPENAI_API_KEY=ollama  # Ollama doesn't require a real key
+export OPENAI_EMBEDDING_MODEL=nomic-embed-text
+uv run cc-vec index --url-patterns "%.github.io" --vector-store-name "local-research" --limit 50
+
+# Using with Llama Stack
+export OPENAI_BASE_URL=http://localhost:8321/v1
+uv run cc-vec index --url-patterns "%.edu" --vector-store-name "education" --limit 100
+
+# With self-signed certificates or local development (disable SSL verification)
+export OPENAI_BASE_URL=https://localhost:8443/v1
+export OPENAI_VERIFY_SSL=false  # ⚠️ Use only in development with trusted endpoints
+export OPENAI_API_KEY=your-key
+uv run cc-vec index --url-patterns "%.github.io" --vector-store-name "local-dev" --limit 50
+
 # List cc-vec vector stores (default - only shows stores created by cc-vec)
 uv run cc-vec list --output json
 
@@ -80,9 +97,111 @@ uv run cc-vec query "Explain deep learning" --vector-store-name "ml-research" --
 
 ```
 
+## 1.5. 🦙 Local Llama Stack Setup (Optional)
+
+For running cc-vec with local models via Llama Stack + Ollama, use the standalone manager script:
+
+**Prerequisites:**
+- Ollama installed and running (`ollama serve`)
+- Docker (for Docker backend) or uv (for UV backend)
+
+**First-time setup:**
+
+```bash
+# Install and start Ollama first
+# macOS/Linux: curl -fsSL https://ollama.com/install.sh | sh
+ollama serve &
+
+# Run setup (pulls required models, installs dependencies)
+uv run llama-stack-helper setup --backend docker
+
+# Or for UV backend:
+uv run llama-stack-helper setup --backend uv
+```
+
+**Start Llama Stack:**
+
+```bash
+# Docker backend (recommended)
+uv run llama-stack-helper start --backend docker
+
+# Or UV backend
+uv run llama-stack-helper start --backend uv
+```
+
+**Check status:**
+
+```bash
+uv run llama-stack-helper status
+```
+
+**View logs:**
+
+```bash
+# Show last 20 lines
+uv run llama-stack-helper logs
+
+# Follow logs in real-time
+uv run llama-stack-helper logs --follow
+```
+
+**Stop Llama Stack:**
+
+```bash
+uv run llama-stack-helper stop --backend docker
+```
+
+**Use with cc-vec:**
+
+Once Llama Stack is running, set the environment variables:
+
+```bash
+# Set Llama Stack environment variables in your current shell
+eval "$(uv run llama-stack-helper env)"
+
+# Now use cc-vec normally with your Athena credentials
+export ATHENA_OUTPUT_BUCKET=s3://your-bucket/
+export AWS_ACCESS_KEY_ID=your-key
+export AWS_SECRET_ACCESS_KEY=your-secret
+
+uv run cc-vec index --url-patterns "%.edu" --limit 10
+```
+
+The `env` command outputs (using your configured models):
+```bash
+export OPENAI_BASE_URL=http://localhost:8321/v1
+export OPENAI_API_KEY=none
+export OPENAI_VERIFY_SSL=false
+export OPENAI_EMBEDDING_MODEL=toshk0/nomic-embed-text-v2-moe:Q6_K  # or your custom model
+export OPENAI_EMBEDDING_DIMENSIONS=768  # or your custom dimensions
+```
+
+**Default models** (automatically pulled during setup):
+- `llama3.2:3b` - Inference model
+- `toshk0/nomic-embed-text-v2-moe:Q6_K` - Embedding model (768 dimensions)
+
+**Custom models** (optional):
+
+You can customize which models to use by setting environment variables before running setup:
+
+```bash
+export LLAMA_STACK_INFERENCE_MODEL=llama3.2:1b
+export LLAMA_STACK_EMBEDDING_MODEL=nomic-embed-text
+export LLAMA_STACK_EMBEDDING_DIMENSIONS=768
+
+# Now run setup - it will pull your custom models
+uv run llama-stack-helper setup
+```
+
+These models will be:
+1. Downloaded into Ollama during setup
+2. Configured in the Llama Stack run.yaml
+3. Used automatically by cc-vec when you run `eval "$(uv run llama-stack-helper env)"`
+
 ## 2. 📦 Python Library
 
 ```python
+import os
 from cc_vec import (
     search,
     stats,
@@ -94,6 +213,22 @@ from cc_vec import (
     FilterConfig,
     VectorStoreConfig,
 )
+
+# For alternative endpoints, set environment variables before importing
+# Example: Using Ollama
+# os.environ["OPENAI_BASE_URL"] = "http://localhost:11434/v1"
+# os.environ["OPENAI_API_KEY"] = "ollama"
+# os.environ["OPENAI_EMBEDDING_MODEL"] = "nomic-embed-text"
+
+# Example: Using Llama Stack
+# os.environ["OPENAI_BASE_URL"] = "http://localhost:8321/v1"
+# os.environ["OPENAI_API_KEY"] = "your-llama-stack-key"
+
+# Example: With self-signed certificates (disable SSL verification)
+# ⚠️ Use only in development with trusted endpoints
+# os.environ["OPENAI_BASE_URL"] = "https://localhost:8443/v1"
+# os.environ["OPENAI_VERIFY_SSL"] = "false"
+# os.environ["OPENAI_API_KEY"] = "your-key"
 
 # Basic search and stats (no OpenAI key needed)
 filter_config = FilterConfig(url_patterns=["%.github.io"])
@@ -199,6 +334,9 @@ The config uses stdio mode (required by Claude Desktop):
       "env": {
         "ATHENA_OUTPUT_BUCKET": "your-athena-output-bucket",
         "OPENAI_API_KEY": "your-openai-api-key-here"
+        // "OPENAI_BASE_URL": "http://localhost:11434/v1"   // Optional: Use for Ollama, Llama Stack, or other endpoints
+        // "OPENAI_VERIFY_SSL": "false"                     // Optional: Disable SSL verification for self-signed certs (dev only)
+        // "OPENAI_EMBEDDING_MODEL": "nomic-embed-text"     // Optional: Specify custom embedding model
       }
     }
   }

@@ -10,6 +10,11 @@ This comprehensive example shows:
 6. Cleanup
 
 Run with: uv run python examples/complete_rag_workflow.py
+
+Optional environment variables for alternative endpoints:
+    - OPENAI_BASE_URL: Custom endpoint (e.g., http://localhost:11434/v1)
+    - OPENAI_VERIFY_SSL: Set to "false" for self-signed certs (dev only)
+    - OPENAI_EMBEDDING_MODEL: Custom model (e.g., nomic-embed-text)
 """
 
 import os

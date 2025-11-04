@@ -1,0 +1,109 @@
+version: 2
+image_name: starter
+external_providers_dir: ${env.LLAMA_STACK_DATA_DIR:=~/.llama}/providers.d
+apis:
+- inference
+- vector_io
+- files
+- safety
+- tool_runtime
+- agents
+
+providers:
+  inference:
+  # Single Ollama provider for all models
+  - provider_id: ollama
+    provider_type: remote::ollama
+    config:
+      url: ${env.OLLAMA_URL:=http://localhost:11434}
+
+  vector_io:
+  - provider_id: faiss
+    provider_type: inline::faiss
+    config:
+      persistence:
+        namespace: vector_io::faiss
+        backend: kv_default
+
+  files:
+  - provider_id: meta-reference-files
+    provider_type: inline::localfs
+    config:
+      storage_dir: ${env.LLAMA_STACK_DATA_DIR:=~/.llama}/files
+      metadata_store:
+        table_name: files_metadata
+        backend: sql_default
+
+  safety:
+  - provider_id: llama-guard
+    provider_type: inline::llama-guard
+    config:
+      excluded_categories: []
+
+  agents:
+  - provider_id: meta-reference
+    provider_type: inline::meta-reference
+    config:
+      persistence:
+        agent_state:
+          namespace: agents
+          backend: kv_default
+        responses:
+          table_name: responses
+          backend: sql_default
+          max_write_queue_size: 10000
+          num_writers: 4
+
+storage:
+  backends:
+    kv_default:
+      type: kv_sqlite
+      db_path: ${env.LLAMA_STACK_DATA_DIR:=~/.llama}/kvstore.db
+    sql_default:
+      type: sql_sqlite
+      db_path: ${env.LLAMA_STACK_DATA_DIR:=~/.llama}/sql_store.db
+  stores:
+    metadata:
+      namespace: registry
+      backend: kv_default
+    inference:
+      table_name: inference_store
+      backend: sql_default
+      max_write_queue_size: 10000
+      num_writers: 4
+    conversations:
+      table_name: openai_conversations
+      backend: sql_default
+
+registered_resources:
+  models:
+  # Inference model (configurable via LLAMA_STACK_INFERENCE_MODEL)
+  - model_id: ${env.LLAMA_STACK_INFERENCE_MODEL:=llama3.2:3b}
+    provider_id: ollama
+    provider_model_id: ${env.LLAMA_STACK_INFERENCE_MODEL:=llama3.2:3b}
+    model_type: llm
+  # Embedding model (configurable via LLAMA_STACK_EMBEDDING_MODEL)
+  - model_id: ${env.LLAMA_STACK_EMBEDDING_MODEL:=toshk0/nomic-embed-text-v2-moe:Q6_K}
+    provider_id: ollama
+    provider_model_id: ${env.LLAMA_STACK_EMBEDDING_MODEL:=toshk0/nomic-embed-text-v2-moe:Q6_K}
+    model_type: embedding
+    metadata:
+      embedding_dimension: ${env.LLAMA_STACK_EMBEDDING_DIMENSIONS:=768}
+  shields: []
+  vector_dbs: []
+  datasets: []
+  scoring_fns: []
+  benchmarks: []
+  tool_groups: []
+
+server:
+  port: 8321
+
+telemetry:
+  enabled: true
+
+vector_stores:
+  default_provider_id: faiss
+  default_embedding_model:
+    provider_id: ollama
+    model_id: ${env.LLAMA_STACK_EMBEDDING_MODEL:=toshk0/nomic-embed-text-v2-moe:Q6_K}

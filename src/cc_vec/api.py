@@ -3,6 +3,7 @@
 import logging
 from typing import List, Dict, Any, Optional
 
+import httpx
 from openai import OpenAI
 from .types import FilterConfig, CrawlRecord, StatsResponse, VectorStoreConfig
 from .types.config import load_config
@@ -55,9 +56,16 @@ def _get_openai_client() -> OpenAI:
     global _openai_client
     if _openai_client is None:
         config = load_config()
+
+        # Create custom httpx client if SSL verification is disabled
+        http_client = None
+        if not config.openai.verify_ssl:
+            http_client = httpx.Client(verify=False)
+
         _openai_client = OpenAI(
             api_key=config.openai.api_key,
             base_url=config.openai.base_url,
+            http_client=http_client,
         )
     return _openai_client
 

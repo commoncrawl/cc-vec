@@ -43,7 +43,7 @@ class VectorStoreLoader:
                 "created_by": "cc-vec",
                 "cc_vec_version": "0.1.0",
                 "embedding_model": self.config.embedding_model,
-                "embedding_dimension": str(self.config.embedding_dimensions),
+                "embedding_dimensions": str(self.config.embedding_dimensions),
             },
             "chunking_strategy": {
                 "type": "static",
@@ -144,6 +144,34 @@ Meta Description: {processed_content.get("meta_description", "N/A")}
             logger.info(f"Upload completed with status: {file_batch.status}")
             logger.info(f"File counts: {file_batch.file_counts}")
 
+            # Log detailed failure information if any files failed
+            if file_batch.file_counts.failed > 0:
+                logger.warning(f"{file_batch.file_counts.failed} files failed to upload")
+                # Try to get detailed error information for failed files
+                try:
+                    batch_files = self.client.vector_stores.file_batches.list_files(
+                        vector_store_id=vector_store_id,
+                        batch_id=file_batch.id,
+                        filter="failed"
+                    )
+                    for failed_file in batch_files.data[:3]:  # Show first 3 failures
+                        # Try multiple ways to get error information
+                        error_msg = getattr(failed_file, 'last_error', None)
+                        status = getattr(failed_file, 'status', 'unknown')
+
+                        if error_msg:
+                            # last_error might be an object with message/code
+                            if hasattr(error_msg, 'message'):
+                                logger.error(f"File {failed_file.id} ({status}): {error_msg.message}")
+                            else:
+                                logger.error(f"File {failed_file.id} ({status}): {error_msg}")
+                        else:
+                            # Dump the entire object to see what's available
+                            logger.error(f"File {failed_file.id} status: {status}")
+                            logger.error(f"Full file object: {failed_file}")
+                except Exception as list_error:
+                    logger.warning(f"Could not retrieve detailed failure information: {list_error}")
+
             return {
                 "status": file_batch.status,
                 "file_counts": file_batch.file_counts,
@@ -232,6 +260,23 @@ def index(
     vector_store_id = loader.create_vector_store()
 
     upload_result = loader.upload_to_vector_store(vector_store_id, successful_fetches)
+
+    # Check if upload failed completely
+    file_counts = upload_result["file_counts"]
+    if upload_result["status"] == "failed" and file_counts.completed == 0:
+        error_msg = (
+            f"All {file_counts.total} files failed to upload to vector store. "
+            f"Failed: {file_counts.failed}, Cancelled: {file_counts.cancelled}. "
+            f"Check the logs above for detailed error messages."
+        )
+        logger.error(error_msg)
+        raise RuntimeError(error_msg)
+
+    # Warn if some files failed but some succeeded
+    if file_counts.failed > 0 and file_counts.completed > 0:
+        logger.warning(
+            f"Partial upload success: {file_counts.completed} succeeded, {file_counts.failed} failed"
+        )
 
     return {
         "vector_store_id": vector_store_id,

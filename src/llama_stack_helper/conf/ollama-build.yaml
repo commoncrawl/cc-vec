@@ -1,0 +1,34 @@
+version: 2
+distribution_spec:
+  description: Quick start template for running Llama Stack with several popular providers.
+    This distribution is intended for CPU-only environments.
+  providers:
+    inference:
+    - provider_type: remote::ollama
+    vector_io:
+    - provider_type: inline::faiss
+    files:
+    - provider_type: inline::localfs
+    safety:
+    - provider_type: inline::llama-guard
+    - provider_type: inline::code-scanner
+    agents:
+    - provider_type: inline::meta-reference
+    eval:
+    - provider_type: inline::meta-reference
+    datasetio:
+    - provider_type: remote::huggingface
+    - provider_type: inline::localfs
+    scoring:
+    - provider_type: inline::basic
+    - provider_type: inline::llm-as-judge
+    - provider_type: inline::braintrust
+    tool_runtime:
+    - provider_type: remote::model-context-protocol
+    batches:
+    - provider_type: inline::reference
+image_type: venv
+additional_pip_packages:
+- aiosqlite
+- asyncpg
+- sqlalchemy[asyncio]

@@ -651,11 +651,17 @@ def index(ctx, vector_store_name, limit, chunk_size, overlap, output, **filter_k
 
             click.echo(f"Auto-generated vector store name: {vector_store_name}")
 
+        # Load config to get embedding model settings from environment
+        config = load_config()
+
         # Construct VectorStoreConfig
         vector_store_config = VectorStoreConfig(
             name=vector_store_name,
             chunk_size=chunk_size,
             overlap=overlap,
+            embedding_model=config.openai.embedding_model
+            or "text-embedding-3-small",
+            embedding_dimensions=config.openai.embedding_dimensions or 1536,
         )
 
         # Use the simplified API that handles all client initialization
