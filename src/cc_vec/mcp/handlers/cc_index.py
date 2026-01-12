@@ -46,11 +46,19 @@ class CCIndexHandler(FilterHandler):
             else:
                 vector_store_name = f"ccvec_{timestamp}"
 
+        # Load config to get embedding model settings from environment
+        from ...types.config import load_config
+
+        config = load_config()
+
         # Construct VectorStoreConfig
         vector_store_config = VectorStoreConfig(
             name=vector_store_name,
             chunk_size=chunk_size,
             overlap=overlap,
+            embedding_model=config.openai.embedding_model
+            or "text-embedding-3-small",
+            embedding_dimensions=config.openai.embedding_dimensions or 1536,
         )
 
         try:
