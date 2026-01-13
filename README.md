@@ -15,7 +15,7 @@ Search, analyze, and index Common Crawl data into vector stores for RAG applicat
 - **`AWS_SESSION_TOKEN`** - Optional for Athena/S3 access (needed to run Athena queries). This is required for temporary credentials
 - **`OPENAI_API_KEY`** - Required for vector operations (index, query, list)
 - `OPENAI_BASE_URL` - Optional custom OpenAI endpoint (e.g., `http://localhost:8321/v1` for Llama Stack)
-- `OPENAI_EMBEDDING_MODEL` - Embedding model to use (e.g., `text-embedding-3-small`, `nomic-embed-text`)
+- `OPENAI_EMBEDDING_MODEL` - Embedding model to use (e.g., `text-embedding-3-small`, `ollama/nomic-embed-text:latest`)
 - `OPENAI_EMBEDDING_DIMENSIONS` - Embedding dimensions (optional, model-specific)
 - `AWS_DEFAULT_REGION` - AWS region (defaults to us-west-2)
 - `LOG_LEVEL` - Logging level (defaults to INFO)
@@ -80,9 +80,76 @@ uv run cc-vec query "Explain deep learning" --vector-store-name "ml-research" --
 
 ```
 
+## 1.5. Local Llama Stack Setup (Optional)
+
+Run cc-vec with local models using Ollama + Llama Stack. This provides a fully local version.
+
+**Step 1: Install and Start Ollama**
+
+```bash
+# Install Ollama (macOS/Linux)
+curl -fsSL https://ollama.com/install.sh | sh
+
+# Start Ollama server
+ollama serve &
+
+# Pull required models
+ollama pull llama3.2:3b                        # Inference model
+ollama pull nomic-embed-text                    # Embedding model (768 dimensions)
+```
+
+**Step 2: Start ChromaDB (Optional - for persistent vector storage)**
+
+The starter distribution uses in-memory FAISS by default. For persistent storage, run ChromaDB:
+
+```bash
+# Install and run ChromaDB
+uv run --with chromadb chroma run --host localhost --port 8000 --path ./chroma_data
+```
+
+**Step 3: Start Llama Stack**
+
+```bash
+# With explicit Ollama URL (and faiss in-memory vectory store)
+uv run --with 'llama-stack>=0.4.0' llama stack run starter --port 8321 \
+  --env OLLAMA_URL=http://localhost:11434
+
+# With ChromaDB for persistent vector storage (if running ChromaDB from Step 2)
+uv run --with 'llama-stack>=0.4.0' llama stack run starter --port 8321 \
+  --env OLLAMA_URL=http://localhost:11434 \
+  --env CHROMADB_URL=http://localhost:8000
+```
+
+This starts the Llama Stack server at `http://localhost:8321`.
+
+**Step 4: Use with cc-vec**
+
+```bash
+# Set environment variables
+export OPENAI_BASE_URL=http://localhost:8321/v1
+export OPENAI_API_KEY=none # Llama Stack doesn't require a real key
+export OPENAI_EMBEDDING_MODEL=ollama/nomic-embed-text:latest
+export OPENAI_EMBEDDING_DIMENSIONS=768
+
+# Set your Athena credentials
+export ATHENA_OUTPUT_BUCKET=s3://your-bucket/
+export AWS_ACCESS_KEY_ID=your-key
+export AWS_SECRET_ACCESS_KEY=your-secret
+
+# Use cc-vec with local models
+uv run cc-vec index --url-patterns "%.edu" --limit 10
+```
+
+**Documentation:**
+- [Llama Stack Docs](https://llamastack.github.io/)
+- [Llama Stack GitHub](https://github.com/meta-llama/llama-stack)
+- [Ollama Models](https://ollama.com/library)
+- [ChromaDB Docs](https://docs.trychroma.com/)
+
 ## 2. 📦 Python Library
 
 ```python
+import os
 from cc_vec import (
     search,
     stats,
@@ -94,6 +161,17 @@ from cc_vec import (
     FilterConfig,
     VectorStoreConfig,
 )
+
+# For alternative endpoints, set environment variables before importing
+# Example: Using Ollama
+# os.environ["OPENAI_BASE_URL"] = "http://localhost:11434/v1"
+# os.environ["OPENAI_API_KEY"] = "ollama"
+# os.environ["OPENAI_EMBEDDING_MODEL"] = "ollama/nomic-embed-text:latest"
+# os.environ["OPENAI_EMBEDDING_DIMENSIONS"] = "768"
+
+# Example: Using Llama Stack
+# os.environ["OPENAI_BASE_URL"] = "http://localhost:8321/v1"
+# os.environ["OPENAI_API_KEY"] = "your-llama-stack-key"
 
 # Basic search and stats (no OpenAI key needed)
 filter_config = FilterConfig(url_patterns=["%.github.io"])
@@ -199,6 +277,9 @@ The config uses stdio mode (required by Claude Desktop):
       "env": {
         "ATHENA_OUTPUT_BUCKET": "your-athena-output-bucket",
         "OPENAI_API_KEY": "your-openai-api-key-here"
+        // "OPENAI_BASE_URL": "http://localhost:11434/v1"   // Optional: Use for Ollama, Llama Stack, or other endpoints
+        // "OPENAI_EMBEDDING_MODEL": "ollama/nomic-embed-text:latest"     // Optional: Specify custom embedding model
+        // "OPENAI_EMBEDDING_DIMENSIONS": "768"              // Optional: Specify embedding dimensions
       }
     }
   }

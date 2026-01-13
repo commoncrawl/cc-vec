@@ -10,6 +10,11 @@ Requirements:
     - OPENAI_API_KEY environment variable
     - ATHENA_OUTPUT_BUCKET environment variable
     - AWS credentials configured
+
+Optional (for alternative endpoints):
+    - OPENAI_BASE_URL: Custom OpenAI-compatible endpoint (e.g., http://localhost:11434/v1 for Ollama)
+    - OPENAI_VERIFY_SSL: Set to "false" to disable SSL verification for self-signed certs (dev only)
+    - OPENAI_EMBEDDING_MODEL: Custom embedding model (e.g., nomic-embed-text for Ollama)
 """
 
 import os
@@ -20,6 +25,9 @@ from openai import OpenAI
 
 def main():
     # Initialize OpenAI client
+    # Note: If using alternative endpoints with self-signed certs, set:
+    #   export OPENAI_BASE_URL=https://localhost:8443/v1
+    #   export OPENAI_VERIFY_SSL=false
     client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
 
     # Step 1: Index Common Crawl content into a vector store
