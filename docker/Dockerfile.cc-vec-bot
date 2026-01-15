@@ -5,7 +5,7 @@ USER root
 
 # Install minimal dependencies required by the Ollama install script
 RUN apt-get update \
-    && apt-get install -y --no-install-recommends curl ca-certificates gnupg zstd \
+    && apt-get install -y --no-install-recommends curl ca-certificates gnupg zstd python3-pip \
     && rm -rf /var/lib/apt/lists/*
 
 # Install Ollama (for local inference when OLLAMA_URL is not set)
@@ -82,10 +82,7 @@ ENV CHATBOT_PORT=8008
 
 WORKDIR /opt/chatbot-frontend
 COPY chatbot-frontend .
-RUN apt-get update && apt-get install -y python3-pip && \
-    pip3 install --no-cache-dir -r requirements.txt && \
-    apt-get remove -y python3-pip && apt-get autoremove -y && \
-    rm -rf /var/lib/apt/lists/*
+RUN pip3 install --no-cache-dir -r requirements.txt
 
 # ---------------------------------------------------------------------------
 # Construct entrypoint script

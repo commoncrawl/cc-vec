@@ -4,7 +4,7 @@ services:
       context: ..
       dockerfile: docker/Dockerfile.cc-vec-bot
       args:
-        PREFETCH_MODEL: ${PREFETCH_MODEL:-0}
+        PREFETCH_MODEL: ${PREFETCH_MODEL:-1}
         INFERENCE_MODEL: ${INFERENCE_MODEL:-tinyllama}
     image: cc-vec-bot
     environment:

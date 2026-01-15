@@ -1,32 +1,22 @@
-# Minimal Llama Chatbot Frontend
+# Minimal CC Chatbot Frontend
 
-This directory contains a minimal web-based chatbot UI and a FastAPI backend that proxies requests to an Ollama (Llama) backend.
+## Quickstart
 
-## Usage
-
-1. **Install dependencies**
+Launch ollama server, then run:
 
 ```bash
 pip install -r requirements.txt
-```
-
-2. **Run the backend**
-
-```bash
 uvicorn api:app --reload
 ```
 
-3. **Open the frontend**
-
-Open `index.html` in your browser (or serve it with any static file server).
+Click on the link that uvicorn prints in your terminal to open the frontend.
 
 ## Configuration
 
-- The backend expects an Ollama server running at `http://localhost:11434` by default.
-- You can override the Ollama URL and model with environment variables:
-  - `OLLAMA_URL` (e.g. `http://localhost:11434/api/generate`)
-  - `INFERENCE_MODEL` (e.g. `tinyllama`)
+Configuration is done via environment variables in `api.py`. Defaults:
 
-## Notes
-- The backend is intentionally minimal and does not persist chat history.
-- The frontend is pure HTML/JS, no frameworks or build step required.
+```bash
+OLLAMA_URL=http://localhost:11434 # /api/generate is appended
+INFERENCE_MODEL=tinyllama
+STREAMING=1
+````
