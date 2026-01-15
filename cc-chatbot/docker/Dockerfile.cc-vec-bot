@@ -83,7 +83,7 @@ ENV OLLAMA_STREAMING=1
 # ---------------------------------------------------------------------------
 
 WORKDIR /opt/chatbot-frontend
-COPY chatbot-frontend .
+COPY chatbot .
 RUN pip3 install --no-cache-dir -r requirements.txt
 
 # ---------------------------------------------------------------------------
