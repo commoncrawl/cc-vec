@@ -1,0 +1,58 @@
+FROM llamastack/distribution-starter:0.4.1
+LABEL maintainer="damian@commoncrawl.org"
+
+USER root
+
+# Install minimal dependencies required by the Ollama install script
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends curl ca-certificates gnupg \
+    && rm -rf /var/lib/apt/lists/*
+
+# Install Ollama
+RUN curl -fsSL https://ollama.ai/install.sh | sh
+
+ENV PATH="/usr/local/bin:${PATH}"
+
+# Default model to pull on startup (tinyllama ~637MB, smallest practical LLM)
+# For even smaller (embeddings only): all-minilm (~45MB)
+# For production: llama3.2:3b (~2GB)
+ENV OLLAMA_MODEL="tinyllama"
+
+# Create entrypoint script that starts ollama and pulls model on first run
+RUN cat <<'EOF' > /entrypoint.sh
+#!/bin/bash
+set -e
+
+# Start ollama server in background
+ollama serve &
+OLLAMA_PID=$!
+
+# Wait for ollama to be ready
+echo "Waiting for Ollama to start..."
+for i in {1..30}; do
+    if curl -s http://localhost:11434/api/tags >/dev/null 2>&1; then
+        echo "Ollama is ready"
+        break
+    fi
+    sleep 1
+done
+
+# Pull model if not already present
+if [ -n "$OLLAMA_MODEL" ]; then
+    echo "Ensuring model $OLLAMA_MODEL is available..."
+    ollama pull "$OLLAMA_MODEL"
+fi
+
+# If a command was passed, run it; otherwise wait on ollama
+if [ $# -gt 0 ]; then
+    exec "$@"
+else
+    wait $OLLAMA_PID
+fi
+EOF
+RUN chmod +x /entrypoint.sh
+
+EXPOSE 11434
+
+ENTRYPOINT ["/entrypoint.sh"]
+CMD []
