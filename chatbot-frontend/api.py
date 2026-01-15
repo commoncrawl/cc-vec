@@ -11,6 +11,7 @@ STREAMING = os.environ.get("OLLAMA_STREAMING", "0") != "0"
 
 @app.get("/")
 async def serve_index():
+    print("serving index.html")
     return FileResponse("index.html")
 
 @app.post("/api/chat")

@@ -5,7 +5,7 @@ USER root
 
 # Install minimal dependencies required by the Ollama install script
 RUN apt-get update \
-    && apt-get install -y --no-install-recommends curl ca-certificates gnupg \
+    && apt-get install -y --no-install-recommends curl ca-certificates gnupg zstd \
     && rm -rf /var/lib/apt/lists/*
 
 # Install Ollama (for local inference when OLLAMA_URL is not set)
@@ -74,13 +74,18 @@ ENV INFERENCE_MODEL=${INFERENCE_MODEL}
 # Default ports
 ENV LLAMA_STACK_PORT=5001
 ENV OLLAMA_PORT=11434
-
+ENV CHATBOT_PORT=8008
 
 # ---------------------------------------------------------------------------
 # Install chatbot-frontend
 # ---------------------------------------------------------------------------
 
-
+WORKDIR /opt/chatbot-frontend
+COPY chatbot-frontend .
+RUN apt-get update && apt-get install -y python3-pip && \
+    pip3 install --no-cache-dir -r requirements.txt && \
+    apt-get remove -y python3-pip && apt-get autoremove -y && \
+    rm -rf /var/lib/apt/lists/*
 
 # ---------------------------------------------------------------------------
 # Construct entrypoint script
@@ -164,13 +169,20 @@ else
     done
 fi
 
+# Start the chatbot in the background
+echo "Starting chatbot-frontend..."
+(cd /opt/chatbot-frontend && uvicorn api:app --host 0.0.0.0 --port ${CHATBOT_PORT:-8000} &)
+#(cd /opt/chatbot-frontend && uvicorn api:app --host 0.0.0.0 --port ${CHATBOT_PORT:-8000})
+CHATBOT_PID=$!
+echo "Chatbot-frontend started with PID ${CHATBOT_PID}"
+
 # Start llama-stack server
 # The distribution-starter base image includes llama-stack
 echo "Starting llama-stack on port ${LLAMA_STACK_PORT}..."
-exec llama stack run /root/.llama/distributions/ollama/run.yaml \
+export OLLAMA_URL="${OLLAMA_URL}"
+export INFERENCE_MODEL="${INFERENCE_MODEL}"
+exec llama stack run starter \
     --port "${LLAMA_STACK_PORT}" \
-    --env OLLAMA_URL="${OLLAMA_URL}" \
-    --env INFERENCE_MODEL="${INFERENCE_MODEL}" \
     "${EXTRA_ARGS[@]}"
 EOF
 
