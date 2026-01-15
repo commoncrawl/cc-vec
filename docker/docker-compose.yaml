@@ -10,14 +10,12 @@ services:
     environment:
       LLAMA_STACK_PORT: ${LLAMA_STACK_PORT:-5001}
       CHATBOT_PORT: ${CHATBOT_PORT:-8008}
-      OLLAMA_PORT: ${OLLAMA_PORT:-11434}
+      OLLAMA_URL: ${OLLAMA_URL:-}
       OLLAMA_STREAMING: ${OLLAMA_STREAMING:-1}
       INFERENCE_MODEL: ${INFERENCE_MODEL:-tinyllama}
     ports:
-      - "${LLAMA_STACK_PORT}:${LLAMA_STACK_PORT}"
-      - "${CHATBOT_PORT}:${CHATBOT_PORT}"
-      - "${OLLAMA_PORT}:${OLLAMA_PORT}"
+      - "${LLAMA_STACK_PORT:-5001}:${LLAMA_STACK_PORT:-5001}"
+      - "${CHATBOT_PORT:-8008}:${CHATBOT_PORT:-8008}"
     volumes:
       - ~/.llama:/root/.llama
-    command: ["--port", "${LLAMA_STACK_PORT}"]
 

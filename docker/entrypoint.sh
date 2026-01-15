@@ -75,7 +75,13 @@ fi
 
 # Start the chatbot in the background
 echo "Starting chatbot-frontend on port ${CHATBOT_PORT}..."
-(cd /opt/chatbot-frontend && uvicorn api:app --host 0.0.0.0 --port "${CHATBOT_PORT}" > /var/log/chatbot.log 2>&1 &)
+(cd /opt/chatbot-frontend && uvicorn api:app --host 0.0.0.0 --port "${CHATBOT_PORT}" &)
+SUCCESS=$?
+if [ $SUCCESS -ne 0 ]; then
+    cat /var/log/chatbot.log
+    echo "ERROR: Failed to start chatbot-frontend"
+    exit 1
+fi
 CHATBOT_PID=$!
 echo "Chatbot-frontend started with PID ${CHATBOT_PID}"
 
