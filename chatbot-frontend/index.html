@@ -1,0 +1,38 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>Llama Chatbot</title>
+  <style>
+    body { font-family: sans-serif; max-width: 600px; margin: 2em auto; }
+    #chat { width: 100%; height: 300px; }
+    #input { width: 100%; }
+  </style>
+</head>
+<body>
+  <h2>Llama Chatbot</h2>
+  <textarea id="chat" readonly></textarea><br>
+  <input id="input" autocomplete="off" placeholder="Type your message..." />
+  <button onclick="send()">Send</button>
+  <script>
+    async function send() {
+      const input = document.getElementById('input');
+      const chat = document.getElementById('chat');
+      const msg = input.value;
+      if (!msg) return;
+      chat.value += "You: " + msg + "\n";
+      input.value = "";
+      const res = await fetch('/api/chat', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({message: msg})
+      });
+      const data = await res.json();
+      chat.value += "Bot: " + data.response + "\n";
+      chat.scrollTop = chat.scrollHeight;
+    }
+    document.getElementById('input').addEventListener('keydown', e => {
+      if (e.key === 'Enter') send();
+    });
+  </script>
+</body>
+</html>
