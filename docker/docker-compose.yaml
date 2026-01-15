@@ -1,0 +1,21 @@
+services:
+  cc-vec-bot:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile.cc-vec-bot
+      args:
+        PREFETCH_MODEL: ${PREFETCH_MODEL:-0}
+        INFERENCE_MODEL: ${INFERENCE_MODEL:-tinyllama}
+    image: cc-vec-bot
+    environment:
+      LLAMA_STACK_PORT: ${LLAMA_STACK_PORT:-5001}
+      CHATBOT_PORT: ${CHATBOT_PORT:-8008}
+      OLLAMA_PORT: ${OLLAMA_PORT:-11434}
+    ports:
+      - "${LLAMA_STACK_PORT:-5001}:${LLAMA_STACK_PORT:-5001}"
+      - "${CHATBOT_PORT:-8008}:${CHATBOT_PORT:-8008}"
+      - "${OLLAMA_PORT:-11434}:${OLLAMA_PORT:-11434}"
+    volumes:
+      - ~/.llama:/root/.llama
+    command: ["--port", "${LLAMA_STACK_PORT:-5001}"]
+

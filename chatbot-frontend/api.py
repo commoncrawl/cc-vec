@@ -5,7 +5,7 @@ import os
 import json
 
 app = FastAPI()
-OLLAMA_URL = os.environ.get("OLLAMA_URL", "http://localhost:11434/api/generate")
+OLLAMA_URL = os.environ.get("OLLAMA_URL", "http://localhost:11434") + "/api/generate"
 INFERENCE_MODEL = os.environ.get("INFERENCE_MODEL", "tinyllama")
 STREAMING = os.environ.get("OLLAMA_STREAMING", "0") != "0"
 
