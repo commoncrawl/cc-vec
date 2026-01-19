@@ -20,7 +20,7 @@ ENV PATH="/usr/local/bin:${PATH}"
 #
 # Build examples:
 #   docker build --build-arg PREFETCH_MODEL=1 -t cc-vec-bot .           # bake tinyllama
-#   docker build --build-arg PREFETCH_MODEL=1 --build-arg INFERENCE_MODEL=llama3.2:3b -t cc-vec-bot .
+#   docker build --build-arg PREFETCH_MODEL=1 --build-arg INFERENCE_MODEL=llama3.2:3b -t cc-vec-bot . # bake llama3.2:3b
 #   docker build -t cc-vec-bot .                                         # no prefetch (default)
 # ---------------------------------------------------------------------------
 ARG PREFETCH_MODEL=0
