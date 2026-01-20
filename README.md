@@ -172,6 +172,21 @@ uv run cc-vec index --url-patterns "%.edu" --limit 10 --provider-id chromadb
 uv run cc-vec index --input-dir ./data/ --batch-size 5 --provider-id chromadb
 ```
 
+damian: 
+# Set environment variables        
+export OPENAI_BASE_URL=http://localhost:8321/v1
+export OPENAI_API_KEY=none # Llama Stack doesn't require a real key
+export OPENAI_EMBEDDING_MODEL=ollama/nomic-embed-text:latest
+export OPENAI_EMBEDDING_DIMENSIONS=768
+
+# Set your Athena credentials
+export ATHENA_OUTPUT_BUCKET=s3://cc-vec-damian-01/test-results
+export AWS_PROFILE=cc-volunteers
+export AWS_DEFAULT_REGION=us-east-1
+
+# Use cc-vec with local models
+uv run cc-vec index --url-patterns "%.edu" --limit 10
+
 **Documentation:**
 - [Llama Stack Docs](https://llamastack.github.io/)
 - [Llama Stack GitHub](https://github.com/meta-llama/llama-stack)

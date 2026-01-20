@@ -1,0 +1,103 @@
+FROM llamastack/distribution-starter:0.4.1
+LABEL maintainer="damian@commoncrawl.org"
+
+USER root
+
+# Install minimal dependencies required by the Ollama install script
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends curl ca-certificates gnupg zstd python3-pip \
+    && rm -rf /var/lib/apt/lists/*
+
+# Install Ollama (for local inference when OLLAMA_URL is not set)
+RUN curl -fsSL https://ollama.ai/install.sh | sh
+
+ENV PATH="/usr/local/bin:${PATH}"
+
+# ---------------------------------------------------------------------------
+# Build-time model pre-fetch (optional)
+# Set PREFETCH_MODEL=1 to bake the model into the image at build time.
+# This makes the image larger but faster to start.
+#
+# Build examples:
+#   docker build --build-arg PREFETCH_MODEL=1 -t cc-vec-bot .           # bake tinyllama
+#   docker build --build-arg PREFETCH_MODEL=1 --build-arg INFERENCE_MODEL=llama3.2:3b -t cc-vec-bot . # bake llama3.2:3b
+#   docker build -t cc-vec-bot .                                         # no prefetch (default)
+# ---------------------------------------------------------------------------
+ARG PREFETCH_MODEL=0
+ARG INFERENCE_MODEL=tinyllama
+
+# Pre-fetch model at build time if PREFETCH_MODEL=1
+# Requires starting ollama serve temporarily during build
+RUN if [ "$PREFETCH_MODEL" = "1" ]; then \
+        echo "Pre-fetching model: ${INFERENCE_MODEL}"; \
+        ollama serve & \
+        OLLAMA_PID=$!; \
+        sleep 5; \
+        for i in 1 2 3 4 5 6 7 8 9 10; do \
+            curl -s http://localhost:11434/api/tags >/dev/null 2>&1 && break; \
+            sleep 2; \
+        done; \
+        ollama pull "${INFERENCE_MODEL}"; \
+        kill $OLLAMA_PID 2>/dev/null || true; \
+        echo "Model ${INFERENCE_MODEL} pre-fetched successfully"; \
+    else \
+        echo "Skipping model pre-fetch (PREFETCH_MODEL=0)"; \
+    fi
+
+# ---------------------------------------------------------------------------
+# Compatibility with deprecated llamastack/distribution-ollama
+# Usage:
+#   export LLAMA_STACK_PORT=5001
+#   docker run -it \
+#     -p $LLAMA_STACK_PORT:$LLAMA_STACK_PORT \
+#     -v ~/.llama:/root/.llama \
+#     cc-vec-bot \
+#     --port $LLAMA_STACK_PORT \
+#     --env INFERENCE_MODEL=tinyllama \
+#     --env OLLAMA_URL=http://host.docker.internal:11434
+#
+# Or with built-in Ollama (no external Ollama needed):
+#   docker run -it \
+#     -p 5001:5001 -p 11434:11434 \
+#     -v ~/.llama:/root/.llama \
+#     cc-vec-bot \
+#     --port 5001 \
+#     --env INFERENCE_MODEL=tinyllama
+# ---------------------------------------------------------------------------
+
+# Default model (inherits from build ARG, can be overridden at runtime)
+# tinyllama ~637MB (smallest practical LLM)
+# all-minilm ~45MB (embeddings only)
+# llama3.2:3b ~2GB (production)
+ENV INFERENCE_MODEL=${INFERENCE_MODEL}
+
+# Default ports
+ENV LLAMA_STACK_PORT=5001
+ENV CHATBOT_PORT=8008
+
+# Streaming mode (0=off, 1=on)
+ENV OLLAMA_STREAMING=1
+
+# ---------------------------------------------------------------------------
+# Install chatbot-frontend
+# ---------------------------------------------------------------------------
+
+WORKDIR /opt/chatbot-frontend
+COPY chatbot .
+RUN pip3 install --no-cache-dir -r requirements.txt
+
+# ---------------------------------------------------------------------------
+# Copy and setup entrypoint script
+# ---------------------------------------------------------------------------
+
+COPY docker/entrypoint.sh /entrypoint.sh
+RUN chmod +x /entrypoint.sh
+
+# Volume for llama-stack config and model cache
+VOLUME ["/root/.llama"]
+
+# Expose both llama-stack and ollama ports
+EXPOSE 5001 11434
+
+ENTRYPOINT ["/entrypoint.sh"]
+CMD []
