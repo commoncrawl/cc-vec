@@ -78,7 +78,33 @@ uv run cc-vec query "What is machine learning?" --vector-store-id "vs-123abc" --
 # Query vector store by name
 uv run cc-vec query "Explain deep learning" --vector-store-name "ml-research" --limit 3
 
+# Fetch → Index Pipeline (for large datasets or multi-step workflows)
+# Step 1: Fetch and save content to files
+uv run cc-vec fetch --url-patterns "%.github.io" --output-dir ./fetched_data/ --limit 100
+
+# Step 2: Index from saved files (can be run later or on different machine)
+uv run cc-vec index --input-dir ./fetched_data/ --vector-store-name "my-research"
+
+# Use --batch-size to reduce load on embedding service (helps with local models)
+uv run cc-vec index --input-dir ./fetched_data/ --batch-size 5 --limit 50
+
+# Use --provider-id to specify vector store backend (Llama Stack only)
+uv run cc-vec index --input-dir ./fetched_data/ --provider-id chromadb --vector-store-name "persistent-store"
+
 ```
+
+### Pipeline Benefits
+
+The fetch → index pipeline allows you to:
+- **Fetch data once and index multiple times** with different configurations
+- **Process data on a different machine** than where it was fetched
+- **Resume indexing** if the process was interrupted
+- **Share fetched data** with others
+
+### Advanced Options
+
+- **`--batch-size N`**: Upload files in batches of N to reduce load on embedding services (recommended for local models like Ollama)
+- **`--provider-id ID`**: Specify vector store backend for Llama Stack (`chromadb` for persistent storage, `faiss` for in-memory)
 
 ## 1.5. Local Llama Stack Setup (Optional)
 
@@ -112,11 +138,11 @@ uv run --with chromadb chroma run --host localhost --port 8000 --path ./chroma_d
 ```bash
 # With explicit Ollama URL (and faiss in-memory vectory store)
 uv run --with 'llama-stack>=0.4.0' llama stack run starter --port 8321 \
-  --env OLLAMA_URL=http://localhost:11434
+  --env OLLAMA_URL=http://localhost:11434/v1
 
 # With ChromaDB for persistent vector storage (if running ChromaDB from Step 2)
 uv run --with 'llama-stack>=0.4.0' llama stack run starter --port 8321 \
-  --env OLLAMA_URL=http://localhost:11434 \
+  --env OLLAMA_URL=http://localhost:11434/v1 \
   --env CHROMADB_URL=http://localhost:8000
 ```
 
@@ -138,6 +164,12 @@ export AWS_SECRET_ACCESS_KEY=your-secret
 
 # Use cc-vec with local models
 uv run cc-vec index --url-patterns "%.edu" --limit 10
+
+# Use ChromaDB for persistent storage (requires ChromaDB running)
+uv run cc-vec index --url-patterns "%.edu" --limit 10 --provider-id chromadb
+
+# Use --batch-size to prevent overwhelming Ollama with concurrent requests
+uv run cc-vec index --input-dir ./data/ --batch-size 5 --provider-id chromadb
 ```
 
 **Documentation:**
@@ -155,6 +187,7 @@ from cc_vec import (
     stats,
     fetch,
     index,
+    index_from_files,
     list_vector_stores,
     query_vector_store,
     list_crawls,
@@ -257,6 +290,17 @@ for i, result in enumerate(query_results.get("results", []), 1):
     print(f"  {i}. Score: {result.get('score', 0):.3f}")
     print(f"     Content: {result.get('content', '')[:100]}...")
     print(f"     File: {result.get('file_id', 'N/A')}")
+
+# Index from pre-fetched files (two-step workflow)
+# Step 1: Save fetch results to disk (use fetch --output-dir in CLI or save manually)
+# Step 2: Index from the saved files
+vector_config = VectorStoreConfig(
+    name="from-saved-files",
+    chunk_size=800,
+    overlap=400,
+)
+result = index_from_files("./fetched_data/", vector_config, limit=100)
+print(f"Indexed {result['total_fetched']} files into {result['vector_store_name']}")
 ```
 
 

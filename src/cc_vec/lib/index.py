@@ -36,6 +36,8 @@ class VectorStoreLoader:
         )
         logger.info(f"Using embedding model: {self.config.embedding_model}")
         logger.info(f"Using embedding dimensions: {self.config.embedding_dimensions}")
+        if self.config.provider_id:
+            logger.info(f"Using vector store provider: {self.config.provider_id}")
 
         create_kwargs = {
             "name": self.config.name,
@@ -54,7 +56,15 @@ class VectorStoreLoader:
             },
         }
 
-        vector_store = self.client.vector_stores.create(**create_kwargs)
+        # Add provider_id as top-level field for Llama Stack (chromadb, faiss, etc.)
+        # Use extra_body to pass non-standard parameters
+        extra_body = {}
+        if self.config.provider_id:
+            extra_body["provider_id"] = self.config.provider_id
+
+        vector_store = self.client.vector_stores.create(
+            **create_kwargs, extra_body=extra_body if extra_body else None
+        )
 
         logger.info(
             f"Created vector store {self.config.name} with ID: {vector_store.id}"
@@ -99,13 +109,17 @@ Meta Description: {processed_content.get("meta_description", "N/A")}
         return files
 
     def upload_to_vector_store(
-        self, vector_store_id: str, files_data: List[Tuple[CrawlRecord, Dict[str, Any]]]
+        self,
+        vector_store_id: str,
+        files_data: List[Tuple[CrawlRecord, Dict[str, Any]]],
+        batch_size: Optional[int] = None,
     ) -> Dict[str, Any]:
         """Upload processed content to vector store.
 
         Args:
             vector_store_id: ID of the vector store
             files_data: List of (record, processed_content) tuples
+            batch_size: Optional batch size for uploading files (None = all at once)
 
         Returns:
             Upload result with status and file counts
@@ -132,6 +146,12 @@ Meta Description: {processed_content.get("meta_description", "N/A")}
             logger.warning("No processed content files to upload")
             return {"status": "completed", "file_counts": {"total": 0}}
 
+        # If batch_size is specified, upload in batches
+        if batch_size and batch_size > 0 and len(all_files) > batch_size:
+            return self._upload_in_batches(
+                vector_store_id, all_files, all_filenames, files_data, batch_size
+            )
+
         logger.info(
             f"Uploading {len(all_files)} processed content chunks to vector store..."
         )
@@ -146,31 +166,39 @@ Meta Description: {processed_content.get("meta_description", "N/A")}
 
             # Log detailed failure information if any files failed
             if file_batch.file_counts.failed > 0:
-                logger.warning(f"{file_batch.file_counts.failed} files failed to upload")
+                logger.warning(
+                    f"{file_batch.file_counts.failed} files failed to upload"
+                )
                 # Try to get detailed error information for failed files
                 try:
                     batch_files = self.client.vector_stores.file_batches.list_files(
                         vector_store_id=vector_store_id,
                         batch_id=file_batch.id,
-                        filter="failed"
+                        filter="failed",
                     )
                     for failed_file in batch_files.data[:3]:  # Show first 3 failures
                         # Try multiple ways to get error information
-                        error_msg = getattr(failed_file, 'last_error', None)
-                        status = getattr(failed_file, 'status', 'unknown')
+                        error_msg = getattr(failed_file, "last_error", None)
+                        status = getattr(failed_file, "status", "unknown")
 
                         if error_msg:
                             # last_error might be an object with message/code
-                            if hasattr(error_msg, 'message'):
-                                logger.error(f"File {failed_file.id} ({status}): {error_msg.message}")
+                            if hasattr(error_msg, "message"):
+                                logger.error(
+                                    f"File {failed_file.id} ({status}): {error_msg.message}"
+                                )
                             else:
-                                logger.error(f"File {failed_file.id} ({status}): {error_msg}")
+                                logger.error(
+                                    f"File {failed_file.id} ({status}): {error_msg}"
+                                )
                         else:
                             # Dump the entire object to see what's available
                             logger.error(f"File {failed_file.id} status: {status}")
                             logger.error(f"Full file object: {failed_file}")
                 except Exception as list_error:
-                    logger.warning(f"Could not retrieve detailed failure information: {list_error}")
+                    logger.warning(
+                        f"Could not retrieve detailed failure information: {list_error}"
+                    )
 
             return {
                 "status": file_batch.status,
@@ -192,6 +220,105 @@ Meta Description: {processed_content.get("meta_description", "N/A")}
                 except Exception:
                     pass
 
+    def _upload_in_batches(
+        self,
+        vector_store_id: str,
+        all_files: List[io.BytesIO],
+        all_filenames: List[str],
+        files_data: List[Tuple[CrawlRecord, Dict[str, Any]]],
+        batch_size: int,
+    ) -> Dict[str, Any]:
+        """Upload files in batches to avoid overwhelming the embedding service.
+
+        Args:
+            vector_store_id: ID of the vector store
+            all_files: List of file streams to upload
+            all_filenames: List of filenames
+            files_data: Original files_data for counting
+            batch_size: Number of files per batch
+
+        Returns:
+            Aggregated upload result
+        """
+        total_files = len(all_files)
+        num_batches = (total_files + batch_size - 1) // batch_size
+
+        logger.info(
+            f"Uploading {total_files} files in {num_batches} batches of up to {batch_size} files each"
+        )
+
+        total_completed = 0
+        total_failed = 0
+        total_cancelled = 0
+        all_batch_ids = []
+        last_status = "completed"
+
+        for batch_num in range(num_batches):
+            start_idx = batch_num * batch_size
+            end_idx = min(start_idx + batch_size, total_files)
+            batch_files = all_files[start_idx:end_idx]
+
+            logger.info(
+                f"Uploading batch {batch_num + 1}/{num_batches} ({len(batch_files)} files)..."
+            )
+
+            try:
+                file_batch = self.client.vector_stores.file_batches.upload_and_poll(
+                    vector_store_id=vector_store_id, files=batch_files
+                )
+
+                total_completed += file_batch.file_counts.completed
+                total_failed += file_batch.file_counts.failed
+                total_cancelled += file_batch.file_counts.cancelled
+                all_batch_ids.append(file_batch.id)
+                last_status = file_batch.status
+
+                logger.info(
+                    f"Batch {batch_num + 1} completed: {file_batch.file_counts.completed} success, "
+                    f"{file_batch.file_counts.failed} failed"
+                )
+
+                if file_batch.file_counts.failed > 0:
+                    logger.warning(
+                        f"Batch {batch_num + 1}: {file_batch.file_counts.failed} files failed"
+                    )
+
+            except Exception as e:
+                logger.error(f"Batch {batch_num + 1} failed: {e}")
+                total_failed += len(batch_files)
+
+            finally:
+                # Close streams for this batch
+                for stream in batch_files:
+                    try:
+                        stream.close()
+                    except Exception:
+                        pass
+
+        logger.info(
+            f"All batches completed: {total_completed} success, {total_failed} failed, {total_cancelled} cancelled"
+        )
+
+        # Create aggregated file_counts object
+        class FileCounts:
+            def __init__(self, completed, failed, cancelled, total):
+                self.completed = completed
+                self.failed = failed
+                self.cancelled = cancelled
+                self.total = total
+                self.in_progress = 0
+
+        return {
+            "status": last_status if total_failed == 0 else "completed",
+            "file_counts": FileCounts(
+                total_completed, total_failed, total_cancelled, total_files
+            ),
+            "batch_id": ",".join(all_batch_ids),
+            "filenames": all_filenames[:10],
+            "total_chunks": total_files,
+            "total_pages": len([f for f in files_data if f[1] is not None]),
+        }
+
 
 def index(
     filter_config: FilterConfig,
@@ -199,7 +326,8 @@ def index(
     vector_store_config: VectorStoreConfig,
     openai_client: OpenAI,
     s3_client: Optional[CCS3Client] = None,
-    limit: int = 10,
+    limit: Optional[int] = 10,
+    batch_size: Optional[int] = None,
 ) -> Dict[str, Any]:
     """Index Common Crawl content into a vector store.
 
@@ -213,6 +341,7 @@ def index(
         openai_client: Pre-configured OpenAI client
         s3_client: Optional S3 client for fetching content
         limit: Maximum number of records to process
+        batch_size: Optional batch size for uploading files (None = all at once)
 
     Returns:
         Dictionary with index results including vector store ID and upload status
@@ -259,7 +388,9 @@ def index(
 
     vector_store_id = loader.create_vector_store()
 
-    upload_result = loader.upload_to_vector_store(vector_store_id, successful_fetches)
+    upload_result = loader.upload_to_vector_store(
+        vector_store_id, successful_fetches, batch_size=batch_size
+    )
 
     # Check if upload failed completely
     file_counts = upload_result["file_counts"]

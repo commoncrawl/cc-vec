@@ -16,7 +16,9 @@ from .. import (
     list_vector_stores as list_vector_stores_function,
     query_vector_store as query_vector_store_function,
     list_crawls as list_crawls_function,
+    index_from_files as index_from_files_function,
 )
+from ..lib.io import save_fetch_results
 from ..types import FilterConfig, VectorStoreConfig
 from ..types.config import load_config
 from .filter_options import generate_filter_options, parse_filter_config_from_cli
@@ -32,11 +34,11 @@ def cli(ctx, debug):
     ctx.ensure_object(dict)
 
     # Skip config loading if just showing help or for commands that don't need it
-    if ctx.invoked_subcommand is None or '--help' in sys.argv or '-h' in sys.argv:
+    if ctx.invoked_subcommand is None or "--help" in sys.argv or "-h" in sys.argv:
         return
 
     # Commands that don't require environment variables
-    no_config_commands = ['list-filter-columns']
+    no_config_commands = ["list-filter-columns"]
     if ctx.invoked_subcommand in no_config_commands:
         return
 
@@ -171,11 +173,15 @@ def stats(ctx, output, **filter_kwargs):
 
             # Display per-crawl statistics in table format
             if response.per_crawl_stats:
-                click.echo(f"Found statistics for {len(response.per_crawl_stats)} crawl(s):")
+                click.echo(
+                    f"Found statistics for {len(response.per_crawl_stats)} crawl(s):"
+                )
                 click.echo()
 
                 # Table header
-                click.echo(f"{'Crawl ID':<20} {'Records':>15} {'Size (MB)':>12} {'Scanned (GB)':>14} {'Cost ($)':>12}")
+                click.echo(
+                    f"{'Crawl ID':<20} {'Records':>15} {'Size (MB)':>12} {'Scanned (GB)':>14} {'Cost ($)':>12}"
+                )
                 click.echo("-" * 85)
 
                 # Table rows
@@ -212,8 +218,13 @@ def stats(ctx, output, **filter_kwargs):
 @click.option("--limit", "-l", default=3, help="Maximum number of records to fetch")
 @click.option("--max-bytes", default=1024, help="Maximum bytes to display per record")
 @click.option("--full", is_flag=True, help="Display full content without truncation")
+@click.option(
+    "--output-dir",
+    type=click.Path(),
+    help="Save fetched content to directory for later indexing",
+)
 @click.pass_context
-def fetch(ctx, limit, max_bytes, full, **filter_kwargs):
+def fetch(ctx, limit, max_bytes, full, output_dir, **filter_kwargs):
     """Fetch Common Crawl content for URLs matching patterns."""
     try:
         # Parse filter config from CLI arguments
@@ -224,6 +235,21 @@ def fetch(ctx, limit, max_bytes, full, **filter_kwargs):
 
         click.echo(f"Fetched content for {len(results)} records:")
         click.echo()
+
+        # If output_dir is specified, save results to files
+        if output_dir:
+            save_result = save_fetch_results(results, output_dir, filter_config)
+            click.echo(
+                f"Saved {save_result['saved_count']} files to {save_result['output_dir']}"
+            )
+            if save_result["skipped_count"] > 0:
+                click.echo(f"Skipped {save_result['skipped_count']} failed fetches")
+            click.echo(f"Manifest: {save_result['manifest_path']}")
+            click.echo()
+            click.echo(
+                "Use 'cc-vec index --input-dir' to index these files into a vector store."
+            )
+            return
 
         for i, (record, content) in enumerate(results, 1):
             click.echo(f"=== Record {i}: {record.url} ===")
@@ -391,12 +417,14 @@ def list_filter_columns(output):
             else:
                 type_str = "various"
 
-            columns.append({
-                "name": field_name,
-                "type": type_str,
-                "description": description,
-                "cli_option": f"--{field_name.replace('_', '-')}"
-            })
+            columns.append(
+                {
+                    "name": field_name,
+                    "type": type_str,
+                    "description": description,
+                    "cli_option": f"--{field_name.replace('_', '-')}",
+                }
+            )
 
         if output == "json":
             click.echo(json.dumps({"filter_columns": columns}, indent=2))
@@ -407,13 +435,15 @@ def list_filter_columns(output):
                 click.echo(f"  {col['cli_option']}")
                 click.echo(f"    Field: {col['name']}")
                 click.echo(f"    Type: {col['type']}")
-                if col['description']:
+                if col["description"]:
                     click.echo(f"    Description: {col['description']}")
                 click.echo()
 
             click.echo(f"Total: {len(columns)} filter columns available")
             click.echo()
-            click.echo("These options are available in: search, stats, fetch, and index commands")
+            click.echo(
+                "These options are available in: search, stats, fetch, and index commands"
+            )
 
     except Exception as e:
         click.echo(f"Error: {e}", err=True)
@@ -598,7 +628,12 @@ def query(ctx, query, vector_store_name, vector_store_id, limit, output, save):
     "--vector-store-name",
     help="Name for the vector store (auto-generated if not provided)",
 )
-@click.option("--limit", "-l", default=5, help="Maximum number of records to index")
+@click.option(
+    "--limit",
+    "-l",
+    default="5",
+    help="Maximum records to index (use 'all' for no limit)",
+)
 @click.option(
     "--chunk-size",
     default=800,
@@ -616,56 +651,136 @@ def query(ctx, query, vector_store_name, vector_store_id, limit, output, save):
     default="text",
     help="Output format",
 )
+@click.option(
+    "--input-dir",
+    type=click.Path(exists=True),
+    help="Load pre-fetched content from directory (skip fetch step)",
+)
+@click.option(
+    "--batch-size",
+    type=int,
+    default=None,
+    help="Upload files in batches of this size (reduces load on embedding service)",
+)
+@click.option(
+    "--provider-id",
+    type=str,
+    default=None,
+    help="Vector store provider for Llama Stack (e.g., 'chromadb', 'faiss')",
+)
 @click.pass_context
-def index(ctx, vector_store_name, limit, chunk_size, overlap, output, **filter_kwargs):
+def index(
+    ctx,
+    vector_store_name,
+    limit,
+    chunk_size,
+    overlap,
+    output,
+    input_dir,
+    batch_size,
+    provider_id,
+    **filter_kwargs,
+):
     """Index Common Crawl content into OpenAI vector store.
 
-    Requires at least one filter parameter (e.g., --url-patterns, --url-host-names, --crawl-ids).
+    Requires at least one filter parameter (e.g., --url-patterns, --url-host-names, --crawl-ids)
+    OR --input-dir to load pre-fetched content.
     Vector store name will be auto-generated if not provided.
     """
     try:
-        # Parse filter config from CLI arguments
-        filter_config = parse_filter_config_from_cli(**filter_kwargs)
-
-        # Generate vector store name if not provided
-        if not vector_store_name:
-            import re
-            from datetime import datetime
-
-            timestamp = datetime.now().strftime("%Y%m%d_%H%M")
-
-            # Generate name based on available filters
-            if filter_config.url_patterns:
-                clean_pattern = re.sub(r"[^a-zA-Z0-9_-]", "_", filter_config.url_patterns[0])
-                clean_pattern = re.sub(r"_+", "_", clean_pattern).strip("_")
-                vector_store_name = f"ccvec_{clean_pattern}_{timestamp}"
-            elif filter_config.url_host_names:
-                clean_hosts = re.sub(
-                    r"[^a-zA-Z0-9_-]", "_", filter_config.url_host_names[0]
-                )
-                vector_store_name = f"ccvec_{clean_hosts}_{timestamp}"
-            elif filter_config.crawl_ids:
-                vector_store_name = f"ccvec_{filter_config.crawl_ids[0]}_{timestamp}"
-            else:
-                vector_store_name = f"ccvec_{timestamp}"
-
-            click.echo(f"Auto-generated vector store name: {vector_store_name}")
-
         # Load config to get embedding model settings from environment
         config = load_config()
 
-        # Construct VectorStoreConfig
-        vector_store_config = VectorStoreConfig(
-            name=vector_store_name,
-            chunk_size=chunk_size,
-            overlap=overlap,
-            embedding_model=config.openai.embedding_model
-            or "text-embedding-3-small",
-            embedding_dimensions=config.openai.embedding_dimensions or 1536,
-        )
+        # Parse limit: 'all' means no limit, otherwise convert to int
+        if limit.lower() == "all":
+            parsed_limit = None
+        else:
+            try:
+                parsed_limit = int(limit)
+            except ValueError:
+                raise click.BadParameter(
+                    f"limit must be a number or 'all', got '{limit}'"
+                )
 
-        # Use the simplified API that handles all client initialization
-        result = index_function(filter_config, vector_store_config, limit=limit)
+        # Handle input-dir mode (load pre-fetched content)
+        if input_dir:
+            # Generate vector store name if not provided
+            if not vector_store_name:
+                import re
+                from datetime import datetime
+                from pathlib import Path
+
+                timestamp = datetime.now().strftime("%Y%m%d_%H%M")
+                dir_name = Path(input_dir).name
+                clean_name = re.sub(r"[^a-zA-Z0-9_-]", "_", dir_name)
+                vector_store_name = f"ccvec_{clean_name}_{timestamp}"
+                click.echo(f"Auto-generated vector store name: {vector_store_name}")
+
+            # Construct VectorStoreConfig
+            vector_store_config = VectorStoreConfig(
+                name=vector_store_name,
+                chunk_size=chunk_size,
+                overlap=overlap,
+                embedding_model=config.openai.embedding_model
+                or "text-embedding-3-small",
+                embedding_dimensions=config.openai.embedding_dimensions or 1536,
+                provider_id=provider_id,
+            )
+
+            # Use index_from_files for pre-fetched content
+            result = index_from_files_function(
+                input_dir, vector_store_config, limit=parsed_limit, batch_size=batch_size
+            )
+        else:
+            # Standard mode: fetch and index
+            # Parse filter config from CLI arguments
+            filter_config = parse_filter_config_from_cli(**filter_kwargs)
+
+            # Generate vector store name if not provided
+            if not vector_store_name:
+                import re
+                from datetime import datetime
+
+                timestamp = datetime.now().strftime("%Y%m%d_%H%M")
+
+                # Generate name based on available filters
+                if filter_config.url_patterns:
+                    clean_pattern = re.sub(
+                        r"[^a-zA-Z0-9_-]", "_", filter_config.url_patterns[0]
+                    )
+                    clean_pattern = re.sub(r"_+", "_", clean_pattern).strip("_")
+                    vector_store_name = f"ccvec_{clean_pattern}_{timestamp}"
+                elif filter_config.url_host_names:
+                    clean_hosts = re.sub(
+                        r"[^a-zA-Z0-9_-]", "_", filter_config.url_host_names[0]
+                    )
+                    vector_store_name = f"ccvec_{clean_hosts}_{timestamp}"
+                elif filter_config.crawl_ids:
+                    vector_store_name = (
+                        f"ccvec_{filter_config.crawl_ids[0]}_{timestamp}"
+                    )
+                else:
+                    vector_store_name = f"ccvec_{timestamp}"
+
+                click.echo(f"Auto-generated vector store name: {vector_store_name}")
+
+            # Construct VectorStoreConfig
+            vector_store_config = VectorStoreConfig(
+                name=vector_store_name,
+                chunk_size=chunk_size,
+                overlap=overlap,
+                embedding_model=config.openai.embedding_model
+                or "text-embedding-3-small",
+                embedding_dimensions=config.openai.embedding_dimensions or 1536,
+                provider_id=provider_id,
+            )
+
+            # Use the simplified API that handles all client initialization
+            # Note: For 'all' mode with fetch, use a very high limit since Athena requires a LIMIT
+            fetch_limit = parsed_limit if parsed_limit is not None else 1000000
+            result = index_function(
+                filter_config, vector_store_config, limit=fetch_limit, batch_size=batch_size
+            )
 
         if output == "json":
             click.echo(json.dumps(result, indent=2))
@@ -676,12 +791,10 @@ def index(ctx, vector_store_name, limit, chunk_size, overlap, output, **filter_k
             click.echo(f"Vector Store ID: {result['vector_store_id']}")
 
             # Display crawl IDs
-            crawl_ids = result.get('crawl_ids', [])
+            crawl_ids = result.get("crawl_ids", [])
             if crawl_ids:
                 crawl_display = (
-                    ", ".join(crawl_ids)
-                    if len(crawl_ids) > 1
-                    else crawl_ids[0]
+                    ", ".join(crawl_ids) if len(crawl_ids) > 1 else crawl_ids[0]
                 )
                 click.echo(f"Crawl(s): {crawl_display}")
             click.echo()
@@ -692,7 +805,13 @@ def index(ctx, vector_store_name, limit, chunk_size, overlap, output, **filter_k
 
             if result.get("file_counts"):
                 file_counts = result["file_counts"]
-                click.echo(f"Files uploaded: {file_counts}")
+                # Handle both OpenAI SDK file_counts and our custom FileCounts class
+                if hasattr(file_counts, "completed"):
+                    click.echo(
+                        f"Files: {file_counts.completed} completed, {file_counts.failed} failed, {file_counts.total} total"
+                    )
+                else:
+                    click.echo(f"Files uploaded: {file_counts}")
 
             if result.get("filenames"):
                 click.echo("\nSample filenames:")

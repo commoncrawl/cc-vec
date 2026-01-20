@@ -88,6 +88,7 @@ class VectorStoreConfig(BaseModel):
     overlap: int = 400
     embedding_model: str = "text-embedding-3-small"
     embedding_dimensions: int = 1536
+    provider_id: Optional[str] = None  # e.g., "chromadb", "faiss" for Llama Stack
 
     @field_validator("chunk_size")
     @classmethod
